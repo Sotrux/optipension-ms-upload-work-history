@@ -1,0 +1,27 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+dist/
+
+# Environment
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+
+# Prisma
+prisma/dev.db
+prisma/dev.db-journal
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
