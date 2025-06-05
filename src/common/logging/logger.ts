@@ -3,13 +3,12 @@ import PinoPapertrail from 'pino-papertrail';
 
 // Ensure environment variables are defined
 const PAPERTRAIL_HOST = process.env.PAPERTRAIL_HOST || 'localhost';
-const PAPERTRAIL_PORT = Number(process.env.PAPERTRAIL_PORT) || 12345;
+const PAPERTRAIL_PORT = process.env.PAPERTRAIL_PORT || '12345';
 
-const transport = PinoPapertrail({
+const transport = PinoPapertrail.createWriteStream({
   host: PAPERTRAIL_HOST,
   port: PAPERTRAIL_PORT,
-  appname: 'optipension-service',
-  program: 'optipension',
+  appname: 'optipension-service'
 });
 
 const logger = pino(
