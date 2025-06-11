@@ -5,8 +5,8 @@ import { PdfProcessingService } from './pdf-processing.service';
 import { UploadPdfResponseDto } from './dto/upload-pdf-response.dto';
 import { PdfParserService } from './services/pdf-parser.service';
 import { LoggerService } from '../../common/services/logger.service';
-import * as path from 'path';
 import { PdfProcessingConstants } from './constants/pdf-processing.constants';
+import * as path from 'path';
 
 @Injectable()
 export class BullPdfProcessingService implements PdfProcessingService {
@@ -98,11 +98,29 @@ export class BullPdfProcessingService implements PdfProcessingService {
     try {
       this.logger.log(`Encolando procesamiento para uploadId: ${uploadId}, s3Key: ${s3Key}`);
       
+      // Determinar la ruta del archivo (local para pruebas)
+      const isLocalFile = s3Key.startsWith('CC-') && s3Key.endsWith('.pdf');
+      const pdfPath = isLocalFile 
+        ? path.join(process.cwd(), 'test-uploads', s3Key)
+        : s3Key; // En producción sería la URL de Spaces
+      
+      // Extraer datos preliminares del PDF
+      const preliminaryData = await this.pdfParserService.extractDataFromPdf(pdfPath);
+      
+      if (!preliminaryData.success) {
+        throw new Error(`Error al extraer datos preliminares: ${preliminaryData.errorMessage}`);
+      }
+
       const job = await this.hlParsingQueue.add(
         'process-pdf', 
         { 
-          uploadId, 
+          uploadId,
           s3Key,
+          pdfPath,
+          originalFilename: s3Key,
+          preliminaryData,
+          userId: 'system', // Placeholder, en producción vendría del contexto
+          userName: 'system',
           enqueueTime: new Date().toISOString() 
         }
       );

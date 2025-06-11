@@ -9,13 +9,13 @@ import { HistoryLaboralService } from './history-laboral.service';
 import { UploadResponseDto } from './dto/upload-response.dto';
 import { UploadRequestDto } from './dto/upload-request.dto';
 import { LoggerService } from '../../common/services/logger.service';
-import { AuthGuard } from '../../common/guards/auth.guard';
+import { AuthGuard, generateTestToken } from '../../common/guards/auth.guard';
+import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import * as path from 'path';
 
 @ApiTags('Historia Laboral')
 @Controller('history-laboral')
-// @UseGuards(AuthGuard) // Temporalmente deshabilitado para pruebas
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 export class HistoryLaboralController {
   constructor(
     private readonly historyLaboralService: HistoryLaboralService,
@@ -23,6 +23,7 @@ export class HistoryLaboralController {
   ) {}
 
   @Post('upload')
+  @UseGuards(AuthGuard)
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { 
@@ -109,7 +110,8 @@ export class HistoryLaboralController {
   })
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
-    @Body() uploadRequestDto: UploadRequestDto
+    @Body() uploadRequestDto: UploadRequestDto,
+    @CurrentUser() user: JwtPayload
   ): Promise<UploadResponseDto> {
     try {
       this.logger.debug(
@@ -137,7 +139,8 @@ export class HistoryLaboralController {
       return await this.historyLaboralService.uploadFile(
         file,
         uploadRequestDto.documentType,
-        uploadRequestDto.documentNumber
+        uploadRequestDto.documentNumber,
+        user.sub // user_id del token JWT
       );
     } catch (error) {
       this.logger.error(
@@ -153,5 +156,34 @@ export class HistoryLaboralController {
       
       throw new InternalServerErrorException('Error interno al procesar el archivo');
     }
+  }
+
+  // Endpoint temporal para generar tokens de prueba (solo desarrollo)
+  @Post('generate-test-token')
+  @ApiOperation({ summary: 'Generar token de prueba (solo desarrollo)' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Token de prueba generado',
+    schema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string' },
+        userId: { type: 'string' },
+        message: { type: 'string' }
+      }
+    }
+  })
+  generateTestToken() {
+    const token = generateTestToken();
+    
+    return {
+      success: true,
+      message: 'Token de prueba generado (solo para desarrollo)',
+      data: {
+        token,
+        userId: 'usuario-prueba',
+        instructions: 'Usa este token en el header Authorization: Bearer <token>'
+      }
+    };
   }
 } 

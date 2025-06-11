@@ -74,6 +74,15 @@ describe('HistoryLaboralController', () => {
       documentNumber: '1234567890'
     };
 
+    const mockUser = {
+      sub: 'test-user-123',
+      name: 'Test User',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      aud: 'api:optipension',
+      iss: 'https://optipension-test.com'
+    };
+
     it('should successfully upload a valid PDF file', async () => {
       const expectedResponse = {
         success: true,
@@ -87,15 +96,15 @@ describe('HistoryLaboralController', () => {
 
       mockHistoryLaboralService.uploadFile.mockResolvedValue(expectedResponse);
 
-      const result = await controller.uploadFile(mockFile, mockUploadRequestDto);
+      const result = await controller.uploadFile(mockFile, mockUploadRequestDto, mockUser);
 
       expect(result).toEqual(expectedResponse);
-      expect(service.uploadFile).toHaveBeenCalledWith(mockFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber);
+      expect(service.uploadFile).toHaveBeenCalledWith(mockFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber, mockUser.sub);
       expect(mockLoggerService.debug).toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when no file is provided', async () => {
-      await expect(controller.uploadFile(null, mockUploadRequestDto)).rejects.toThrow();
+      await expect(controller.uploadFile(null, mockUploadRequestDto, mockUser)).rejects.toThrow();
       expect(service.uploadFile).not.toHaveBeenCalled();
     });
 
@@ -109,8 +118,8 @@ describe('HistoryLaboralController', () => {
         new Error('Invalid file type')
       );
 
-      await expect(controller.uploadFile(invalidFile, mockUploadRequestDto)).rejects.toThrow();
-      expect(service.uploadFile).toHaveBeenCalledWith(invalidFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber);
+      await expect(controller.uploadFile(invalidFile, mockUploadRequestDto, mockUser)).rejects.toThrow();
+      expect(service.uploadFile).toHaveBeenCalledWith(invalidFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber, mockUser.sub);
     });
 
     it('should throw BadRequestException for file exceeding size limit', async () => {
@@ -123,8 +132,8 @@ describe('HistoryLaboralController', () => {
         new Error('File too large')
       );
 
-      await expect(controller.uploadFile(largeFile, mockUploadRequestDto)).rejects.toThrow();
-      expect(service.uploadFile).toHaveBeenCalledWith(largeFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber);
+      await expect(controller.uploadFile(largeFile, mockUploadRequestDto, mockUser)).rejects.toThrow();
+      expect(service.uploadFile).toHaveBeenCalledWith(largeFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber, mockUser.sub);
     });
 
     it('should propagate BadRequestException from service', async () => {
@@ -137,8 +146,8 @@ describe('HistoryLaboralController', () => {
       const expectedError = new BadRequestException('Formato de archivo inválido');
       mockHistoryLaboralService.uploadFile.mockRejectedValue(expectedError);
 
-      await expect(controller.uploadFile(mockFile, mockUploadRequestDto)).rejects.toThrow(BadRequestException);
-      expect(mockHistoryLaboralService.uploadFile).toHaveBeenCalledWith(mockFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber);
+      await expect(controller.uploadFile(mockFile, mockUploadRequestDto, mockUser)).rejects.toThrow(BadRequestException);
+      expect(mockHistoryLaboralService.uploadFile).toHaveBeenCalledWith(mockFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber, mockUser.sub);
       expect(mockLoggerService.error).toHaveBeenCalled();
     });
 
@@ -152,8 +161,8 @@ describe('HistoryLaboralController', () => {
       const unexpectedError = new Error('Error inesperado');
       mockHistoryLaboralService.uploadFile.mockRejectedValue(unexpectedError);
 
-      await expect(controller.uploadFile(mockFile, mockUploadRequestDto)).rejects.toThrow(InternalServerErrorException);
-      expect(mockHistoryLaboralService.uploadFile).toHaveBeenCalledWith(mockFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber);
+      await expect(controller.uploadFile(mockFile, mockUploadRequestDto, mockUser)).rejects.toThrow(InternalServerErrorException);
+      expect(mockHistoryLaboralService.uploadFile).toHaveBeenCalledWith(mockFile, mockUploadRequestDto.documentType, mockUploadRequestDto.documentNumber, mockUser.sub);
       expect(mockLoggerService.error).toHaveBeenCalled();
     });
   });

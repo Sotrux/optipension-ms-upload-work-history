@@ -1,0 +1,2 @@
+"id","uu","user_id","document_type","document_number","original_filename","file_size","spaces_key","spaces_url","is_active","created_at","updated_at","created_by","updated_by"
+1,"4e8265c3-1eef-4381-b5bc-8d8d5edb35c6","usuario-prueba","CC","79308073","HL GT-20241004.pdf",147078,"CC-79308073-HL-20250609.pdf","http://localhost:1338/test-uploads/CC-79308073-HL-20250609.pdf",True,"2025-06-09 18:05:18.995","2025-06-09 18:05:18.995",NULL,NULL

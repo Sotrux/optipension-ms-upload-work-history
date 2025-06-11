@@ -34,6 +34,18 @@ async function bootstrap() {
     .setDescription('API para el procesamiento de Historias Laborales de Colpensiones')
     .setVersion('1.0')
     .addTag('PDF Processing', 'Endpoints para procesar PDFs de historias laborales')
+    .addTag('Historia Laboral', 'Endpoints para subir y gestionar archivos de historia laboral')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Introduce el token JWT',
+        in: 'header',
+      },
+      'JWT-auth', // Este nombre debe coincidir con el usado en @ApiBearerAuth()
+    )
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document);

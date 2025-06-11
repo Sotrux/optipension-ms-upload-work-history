@@ -11,6 +11,8 @@ import { PdfProcessingService } from './pdf-processing.service';
 import { BullPdfProcessingService } from './bull-pdf-processing.service';
 import { PdfProcessingConsumer } from './queue/pdf-processing.consumer';
 import { LoggerService } from '../../common/services/logger.service';
+import { ExtractionRepositoryService } from '../history-laboral/services/extraction-repository.service';
+import { PrismaService } from '../../common/services/prisma.service';
 
 @Module({
   imports: [
@@ -42,11 +44,15 @@ import { LoggerService } from '../../common/services/logger.service';
   providers: [
     // Servicios base
     LoggerService,
+    PrismaService,
     PdfLoaderService,
     ColpensionesValidatorService,
     AfiliadoExtractorService,
     PeriodosExtractorService,
     PdfParserService,
+    
+    // Repositorios
+    ExtractionRepositoryService,
     
     // Procesamiento de cola
     PdfProcessingConsumer,

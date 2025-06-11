@@ -12,21 +12,75 @@ datasource db {
   shadowDatabaseUrl   = env("SHADOW_DATABASE_URL")
 }
 
+model AdUsers {
+  id               Int      @id @default(autoincrement())
+  uu               String   @default(dbgenerated("generate_uuid()")) @db.VarChar(36)
+  external_user_id String   @unique @db.VarChar(255)
+  internal_user_id Int      @unique
+  is_active        Boolean  @default(true)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  created_by       Int?
+  updated_by       Int?
+
+  // Relaciones inversas para auditoría
+  created_uploads    HlHistoryLaboralUpload[] @relation("CreatedByUser")
+  updated_uploads    HlHistoryLaboralUpload[] @relation("UpdatedByUser")
+  created_extractions HlExtraction[]          @relation("CreatedByUserExtraction")
+  updated_extractions HlExtraction[]          @relation("UpdatedByUserExtraction")
+
+  @@map("ad_users")
+}
+
 model HlHistoryLaboralUpload {
   id                Int      @id @default(autoincrement())
-  uu                String   @default(dbgenerated("optipension.generate_uuid()")) @db.VarChar(36)
-  userId            String   @db.VarChar(64) // ID de usuario Auth0
-  documentType      String   @db.VarChar(2)
-  documentNumber    String   @db.VarChar(12)
-  originalFilename  String   @db.VarChar(255)
-  fileSize          Int
-  spacesKey         String   @db.VarChar(255)
-  spacesUrl         String   @db.VarChar(512)
-  isActive          Boolean  @default(true) @map("is_active")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-  createdBy         String?  @db.VarChar(64) @map("created_by")
-  updatedBy         String?  @db.VarChar(64) @map("updated_by")
+  uu                String   @default(dbgenerated("generate_uuid()")) @db.VarChar(36)
+  user_id           String   @db.VarChar(255)
+  document_type     String   @db.VarChar(2)
+  document_number   String   @db.VarChar(12)
+  original_filename String   @db.VarChar(255)
+  file_size         Int
+  spaces_key        String   @db.VarChar(500)
+  spaces_url        String   @db.VarChar(1000)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+  created_by        Int?
+  updated_by        Int?
+
+  // Relaciones FK
+  creator    AdUsers?       @relation("CreatedByUser", fields: [created_by], references: [internal_user_id])
+  updater    AdUsers?       @relation("UpdatedByUser", fields: [updated_by], references: [internal_user_id])
+  
+  // Relación con extracciones
+  extraction HlExtraction?
 
   @@map("hl_history_laboral_uploads")
+}
+
+model HlExtraction {
+  id                   Int      @id @default(autoincrement())
+  uu                   String   @default(dbgenerated("generate_uuid()")) @db.VarChar(36)
+  upload_id            Int      @unique
+  full_name            String?  @db.VarChar(255)
+  document             String?  @db.VarChar(20)
+  total_weeks          Decimal? @db.Decimal(10,2)
+  high_risk_weeks      Decimal? @db.Decimal(10,2)
+  discrepancy_of_weeks Decimal? @db.Decimal(10,2)
+  summary_json         Json?
+  status               String   @db.VarChar(20) @default("PENDING")
+  error_message        String?  @db.Text
+  extraction_meta      Json?
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+  created_by           Int?
+  updated_by           Int?
+
+  // Relaciones FK
+  upload   HlHistoryLaboralUpload @relation(fields: [upload_id], references: [id])
+  creator  AdUsers?               @relation("CreatedByUserExtraction", fields: [created_by], references: [internal_user_id])
+  updater  AdUsers?               @relation("UpdatedByUserExtraction", fields: [updated_by], references: [internal_user_id])
+
+  @@map("hl_extractions")
 }

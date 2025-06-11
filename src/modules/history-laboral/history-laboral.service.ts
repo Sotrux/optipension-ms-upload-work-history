@@ -1,14 +1,15 @@
 // Este archivo se implementará en la Fase 3
 // Contendrá la lógica de negocio para procesar los archivos PDF 
 
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { UploadResponseDto, UploadFileData } from './dto/upload-response.dto';
 import { ValidationError } from './interfaces/validation-error.interface';
 import { LoggerService } from '../../common/services/logger.service';
 import { MockSpacesService } from './services/mock-spaces.service';
+import { UploadRepositoryService, CreateUploadData } from './services/upload-repository.service';
 import { DocumentType } from './dto/upload-request.dto';
-import * as path from 'path';
 import { PdfProcessingService } from '../pdf-processing/pdf-processing.service';
+import { HlHistoryLaboralUpload } from '@prisma/client';
 
 @Injectable()
 export class HistoryLaboralService {
@@ -19,6 +20,7 @@ export class HistoryLaboralService {
   constructor(
     private readonly logger: LoggerService,
     private readonly mockSpacesService: MockSpacesService,
+    private readonly uploadRepository: UploadRepositoryService,
     private readonly pdfProcessingService: PdfProcessingService
   ) {}
 
@@ -132,7 +134,8 @@ export class HistoryLaboralService {
   async uploadFile(
     file: Express.Multer.File,
     documentType: DocumentType,
-    documentNumber: string
+    documentNumber: string,
+    userId: string // ID del usuario obtenido del token JWT
   ): Promise<UploadResponseDto> {
     try {
       // Verificación adicional
@@ -165,12 +168,96 @@ export class HistoryLaboralService {
         throw new BadRequestException(validationError);
       }
 
+      // Usar el userId real del token JWT
+      const currentUserId = userId;
+
+      // Verificar duplicados antes de procesar
+      const existingUpload = await this.uploadRepository.findDuplicate(
+        currentUserId,
+        documentType,
+        documentNumber,
+        file.originalname
+      );
+
+      if (existingUpload) {
+        this.logger.logFileOperation({
+          timestamp: new Date().toISOString(),
+          operation: 'upload',
+          fileName: file.originalname,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          status: 'failure',
+          failureReason: 'DUPLICATE_FILE',
+          userId: currentUserId,
+          metadata: { existingUploadId: existingUpload.id }
+        });
+
+        throw new BadRequestException({
+          code: 'DUPLICATE_FILE',
+          message: 'Ya existe un archivo con el mismo nombre para este documento',
+          details: { 
+            existingFile: existingUpload.original_filename,
+            uploadedAt: existingUpload.created_at 
+          }
+        });
+      }
+
       // Subir archivo al mock storage
       const { key, url } = await this.mockSpacesService.uploadFile(
         file,
         documentType,
         documentNumber
       );
+
+      // Persistir en base de datos
+      let savedUpload: HlHistoryLaboralUpload;
+      try {
+        const uploadData: CreateUploadData = {
+          userId: currentUserId,
+          documentType,
+          documentNumber,
+          originalFilename: file.originalname,
+          fileSize: file.size,
+          spacesKey: key,
+          spacesUrl: url,
+          createdBy: currentUserId,
+        };
+
+        savedUpload = await this.uploadRepository.create(uploadData);
+        
+        this.logger.log(
+          `Upload guardado en BD con ID: ${savedUpload.id}`,
+          'HistoryLaboralService',
+          { uploadId: savedUpload.id, spacesKey: key }
+        );
+      } catch (dbError) {
+        // Si falla el guardado en BD, intentar limpiar el archivo subido
+        try {
+          await this.mockSpacesService.deleteFile(key);
+        } catch (cleanupError) {
+          this.logger.error(
+            `Error limpiando archivo tras fallo de BD: ${cleanupError.message}`,
+            cleanupError.stack,
+            'HistoryLaboralService'
+          );
+        }
+
+        this.logger.logError({
+          timestamp: new Date().toISOString(),
+          context: 'DATABASE_SAVE',
+          error: {
+            message: `Error guardando en BD: ${dbError.message}`,
+            stack: dbError.stack
+          },
+          userId: currentUserId,
+          metadata: { spacesKey: key, spacesUrl: url }
+        });
+
+        throw new InternalServerErrorException({
+          code: 'DATABASE_ERROR',
+          message: 'Error al guardar el archivo en la base de datos'
+        });
+      }
 
       // Log de éxito
       this.logger.logFileOperation({
@@ -180,22 +267,23 @@ export class HistoryLaboralService {
         fileSize: file.size,
         mimeType: file.mimetype,
         status: 'success',
+        userId: currentUserId,
         metadata: {
           contentType: file.mimetype,
           encoding: file.encoding,
           spacesKey: key,
-          spacesUrl: url
+          spacesUrl: url,
+          uploadId: savedUpload.id
         }
       });
 
-      // Encolar el archivo para procesamiento
+      // Encolar el archivo para procesamiento usando el ID real
       try {
-        // TODO: Obtener el uploadId real de la base de datos
-        const mockUploadId = new Date().getTime(); // Simulamos un ID por ahora
-        await this.pdfProcessingService.enqueueProcessing(mockUploadId, key);
+        await this.pdfProcessingService.enqueueProcessing(savedUpload.id, key);
         this.logger.debug(
           `Archivo encolado para procesamiento: ${key}`,
-          'HistoryLaboralService'
+          'HistoryLaboralService',
+          { uploadId: savedUpload.id }
         );
       } catch (enqueueError) {
         this.logger.logError({
@@ -217,7 +305,7 @@ export class HistoryLaboralService {
 
       return {
         success: true,
-        message: 'Archivo PDF válido recibido correctamente',
+        message: 'Archivo PDF válido recibido y guardado correctamente',
         data: responseData
       };
     } catch (error) {
@@ -232,6 +320,91 @@ export class HistoryLaboralService {
           }
         });
       }
+      throw error;
+    }
+  }
+
+  /**
+   * Obtener uploads por usuario
+   */
+  async getUserUploads(
+    userId: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+      documentType?: DocumentType;
+      documentNumber?: string;
+    }
+  ): Promise<HlHistoryLaboralUpload[]> {
+    try {
+      return await this.uploadRepository.findByUser(userId, options);
+    } catch (error) {
+      this.logger.logError({
+        timestamp: new Date().toISOString(),
+        context: 'GET_USER_UPLOADS',
+        error: {
+          message: `Error obteniendo uploads del usuario: ${error.message}`,
+          stack: error.stack
+        },
+        userId,
+        metadata: options
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Obtener upload por ID
+   */
+  async getUploadById(uploadId: number, userId?: string): Promise<HlHistoryLaboralUpload | null> {
+    try {
+      const upload = await this.uploadRepository.findById(uploadId);
+      
+      // Verificar ownership si se proporciona userId
+      if (upload && userId && upload.user_id !== userId) {
+        this.logger.logError({
+          timestamp: new Date().toISOString(),
+          context: 'UNAUTHORIZED_ACCESS',
+          error: {
+            message: 'Usuario intenta acceder a upload que no le pertenece'
+          },
+          userId,
+          metadata: { uploadId, ownerId: upload.user_id }
+        });
+        return null; // No revelar que existe
+      }
+
+      return upload;
+    } catch (error) {
+      this.logger.logError({
+        timestamp: new Date().toISOString(),
+        context: 'GET_UPLOAD_BY_ID',
+        error: {
+          message: `Error obteniendo upload por ID: ${error.message}`,
+          stack: error.stack
+        },
+        userId,
+        metadata: { uploadId }
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Obtener estadísticas de uploads
+   */
+  async getUploadStatistics() {
+    try {
+      return await this.uploadRepository.getStatistics();
+    } catch (error) {
+      this.logger.logError({
+        timestamp: new Date().toISOString(),
+        context: 'GET_UPLOAD_STATISTICS',
+        error: {
+          message: `Error obteniendo estadísticas: ${error.message}`,
+          stack: error.stack
+        }
+      });
       throw error;
     }
   }

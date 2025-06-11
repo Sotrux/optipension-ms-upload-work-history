@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PdfParserService } from '../services/pdf-parser.service';
 import { LoggerService } from '../../../common/services/logger.service';
 import { PdfProcessingConstants } from '../constants/pdf-processing.constants';
+import { ExtractionRepositoryService } from '../../history-laboral/services/extraction-repository.service';
 import * as path from 'path';
 
 @Injectable()
@@ -14,11 +15,12 @@ export class PdfProcessingConsumer {
   constructor(
     private readonly pdfParserService: PdfParserService,
     private readonly loggerService: LoggerService,
+    private readonly extractionRepository: ExtractionRepositoryService,
   ) {}
 
   @Process('process-pdf')
   async processPdf(job: Job) {
-    const { userId, userName, pdfPath, originalFilename, preliminaryData } = job.data;
+    const { userId, userName, pdfPath, originalFilename, preliminaryData, uploadId } = job.data;
     
     try {
       this.logger.log(`Iniciando procesamiento detallado del PDF: ${path.basename(pdfPath)}`);
@@ -27,15 +29,31 @@ export class PdfProcessingConsumer {
       // Pero podríamos realizar análisis adicionales o guardar en base de datos
 
       // Usar los datos preliminares que ya tenemos
-      const { document, fullName, totalWeeks, periods } = preliminaryData;
+      const { document, fullName, totalWeeks, periods, highRiskWeeks, extractionMeta } = preliminaryData;
+      
+      // Persistir los datos extraídos en la base de datos
+      if (uploadId) {
+        await this.extractionRepository.markAsProcessed(
+          userId,
+          uploadId,
+          {
+            fullName,
+            document,
+            totalWeeks,
+            highRiskWeeks,
+            periods,
+            extractionMeta,
+          }
+        );
+        
+        this.logger.log(`Datos persistidos en BD para upload_id: ${uploadId}`);
+      }
       
       // Log de procesamiento completo
       this.loggerService.log(
         PdfProcessingConstants.LOGS.PDF_PROCESSING_COMPLETE,
-        `Procesamiento completado: userId: ${userId}, documento: ${document}, nombre: ${fullName}, periodos: ${periods?.length || 0}`
+        `Procesamiento completado: userId: ${userId}, documento: ${document}, nombre: ${fullName?.substring(0, 10)}***, periodos: ${periods?.length || 0}, uploadId: ${uploadId}`
       );
-      
-      // Aquí podríamos guardar en base de datos los resultados
       
       return {
         success: true,
@@ -46,11 +64,29 @@ export class PdfProcessingConsumer {
         totalWeeks,
         periodsCount: periods?.length || 0,
         fileName: originalFilename,
+        uploadId,
       };
     } catch (error) {
+      this.logger.error(`Error procesando PDF: ${error.message}`);
+      
+      // Marcar como error en la base de datos si tenemos uploadId
+      if (uploadId) {
+        try {
+          await this.extractionRepository.markAsError(
+            userId,
+            uploadId,
+            error.message,
+            { errorAt: new Date().toISOString(), fileName: originalFilename }
+          );
+          this.logger.log(`Error persistido en BD para upload_id: ${uploadId}`);
+        } catch (dbError) {
+          this.logger.error(`Error adicional al persistir en BD: ${dbError.message}`);
+        }
+      }
+      
       this.loggerService.log(
         PdfProcessingConstants.LOGS.ERROR_PROCESSING_PDF,
-        `Error procesando PDF en segundo plano: ${error.message}, userId: ${userId}, archivo: ${path.basename(pdfPath)}`
+        `Error procesando PDF en segundo plano: ${error.message}, userId: ${userId}, archivo: ${path.basename(pdfPath)}, uploadId: ${uploadId}`
       );
       
       return {
@@ -59,6 +95,7 @@ export class PdfProcessingConsumer {
         userId,
         userName,
         fileName: originalFilename,
+        uploadId,
       };
     }
   }
